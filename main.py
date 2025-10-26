@@ -1,17 +1,8 @@
 import streamlit as st
 import os
 import time
-from time import sleep
 from pathlib import Path
-from streamlit.components.v1 import html
 from langchain.memory import ConversationSummaryBufferMemory
-from langchain.chains import ConversationChain
-from langchain.prompts import (
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    MessagesPlaceholder,
-)
-from langchain.schema import SystemMessage
 from openai import OpenAI
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
@@ -24,6 +15,10 @@ load_dotenv()
 st.set_page_config(
     page_title=ct.APP_NAME
 )
+
+# 音声ファイル保存用ディレクトリの作成（存在しない場合）
+Path(ct.AUDIO_INPUT_DIR).mkdir(parents=True, exist_ok=True)
+Path(ct.AUDIO_OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
 # タイトル表示
 st.markdown(f"## {ct.APP_NAME}")
@@ -56,12 +51,10 @@ if "messages" not in st.session_state:
         return_messages=True
     )
 
-    # モード「日常英会話」用のChain作成
-    st.session_state.chain_basic_conversation = ft.create_chain(ct.SYSTEM_TEMPLATE_BASIC_CONVERSATION)
+    # 英語レベルのデフォルト値を設定
+    st.session_state.englv = ct.ENGLISH_LEVEL_OPTION[0]  # "初級者"
 
 # 初期表示
-# col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
-# 提出課題用
 col1, col2, col3, col4 = st.columns([2, 2, 3, 3])
 with col1:
     if st.session_state.start_flg:
@@ -94,14 +87,21 @@ with col3:
 with col4:
     st.session_state.englv = st.selectbox(label="英語レベル", options=ct.ENGLISH_LEVEL_OPTION, label_visibility="collapsed")
 
+# デバッグ用：選択された英語レベルの指示を表示
+if st.session_state.get('englv'):
+    with st.expander("🔍 デバッグ情報（英語レベル設定）"):
+        st.write(f"**選択された英語レベル:** {st.session_state.englv}")
+        st.write(f"**LLMへの指示:**")
+        st.code(ct.ENGLISH_LEVEL_INSTRUCTIONS[st.session_state.englv])
+
 with st.chat_message("assistant", avatar="images/ai_icon.jpg"):
     st.markdown("こちらは生成AIによる音声英会話の練習アプリです。何度も繰り返し練習し、英語力をアップさせましょう。")
     st.markdown("**【操作説明】**")
     st.success("""
-    - モードと再生速度を選択し、「英会話開始」ボタンを押して英会話を始めましょう。
+    - モードと再生速度、英語レベルを選択し、「開始」ボタンを押して英会話を始めましょう。
     - モードは「日常英会話」「シャドーイング」「ディクテーション」から選べます。
-    - 発話後、5秒間沈黙することで音声入力が完了します。
-    - 「一時中断」ボタンを押すことで、英会話を一時中断できます。
+    - 「録音開始」ボタンを押して話し始め、話し終わったら「録音終了」ボタンを押してください。
+    - 「やり直す」ボタンで録音をキャンセルできます。
     """)
 st.divider()
 
@@ -138,7 +138,10 @@ if st.session_state.start_flg:
     # 「ディクテーション」ボタン押下時か、「英会話開始」ボタン押下時か、チャット送信時
     if st.session_state.mode == ct.MODE_3 and (st.session_state.dictation_button_flg or st.session_state.dictation_count == 0 or st.session_state.dictation_chat_message):
         if st.session_state.dictation_first_flg:
-            st.session_state.chain_create_problem = ft.create_chain(ct.SYSTEM_TEMPLATE_CREATE_PROBLEM)
+            # 英語レベルに応じたプロンプトを作成
+            level_instruction = ct.ENGLISH_LEVEL_INSTRUCTIONS[st.session_state.englv]
+            system_template = ct.SYSTEM_TEMPLATE_CREATE_PROBLEM.format(level_instruction=level_instruction)
+            st.session_state.chain_create_problem = ft.create_chain(system_template)
             st.session_state.dictation_first_flg = False
         # チャット入力以外
         if not st.session_state.chat_open_flg:
@@ -204,8 +207,13 @@ if st.session_state.start_flg:
             st.markdown(audio_input_text)
 
         with st.spinner("回答の音声読み上げ準備中..."):
+            # 英語レベルに応じたプロンプトを作成
+            level_instruction = ct.ENGLISH_LEVEL_INSTRUCTIONS[st.session_state.englv]
+            system_template = ct.SYSTEM_TEMPLATE_BASIC_CONVERSATION.format(level_instruction=level_instruction)
+            chain_basic_conversation = ft.create_chain(system_template)
+            
             # ユーザー入力値をLLMに渡して回答取得
-            llm_response = st.session_state.chain_basic_conversation.predict(input=audio_input_text)
+            llm_response = chain_basic_conversation.predict(input=audio_input_text)
             
             # LLMからの回答を音声データに変換
             llm_response_audio = st.session_state.openai_obj.audio.speech.create(
@@ -234,7 +242,10 @@ if st.session_state.start_flg:
     # 「シャドーイング」ボタン押下時か、「英会話開始」ボタン押下時
     if st.session_state.mode == ct.MODE_2 and (st.session_state.shadowing_button_flg or st.session_state.shadowing_count == 0 or st.session_state.shadowing_audio_input_flg):
         if st.session_state.shadowing_first_flg:
-            st.session_state.chain_create_problem = ft.create_chain(ct.SYSTEM_TEMPLATE_CREATE_PROBLEM)
+            # 英語レベルに応じたプロンプトを作成
+            level_instruction = ct.ENGLISH_LEVEL_INSTRUCTIONS[st.session_state.englv]
+            system_template = ct.SYSTEM_TEMPLATE_CREATE_PROBLEM.format(level_instruction=level_instruction)
+            st.session_state.chain_create_problem = ft.create_chain(system_template)
             st.session_state.shadowing_first_flg = False
         
         if not st.session_state.shadowing_audio_input_flg:

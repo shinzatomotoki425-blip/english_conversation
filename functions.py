@@ -1,13 +1,10 @@
 import streamlit as st
 import os
 import time
-from pathlib import Path
 import wave
 import pyaudio
 from pydub import AudioSegment
 from audiorecorder import audiorecorder
-import numpy as np
-from scipy.io.wavfile import write
 from langchain.prompts import (
     ChatPromptTemplate,
     HumanMessagePromptTemplate,
@@ -25,11 +22,11 @@ def record_audio(audio_input_file_path):
     """
 
     audio = audiorecorder(
-        start_prompt="発話開始",
+        start_prompt="録音開始",
         pause_prompt="やり直す",
-        stop_prompt="発話終了",
+        stop_prompt="録音終了",
         start_style={"color":"white", "background-color":"black"},
-        pause_style={"color":"gray", "background-color":"white"},
+        pause_style={"color":"black", "background-color":"white"},
         stop_style={"color":"white", "background-color":"black"}
     )
 
@@ -141,10 +138,14 @@ def create_chain(system_template):
 def create_problem_and_play_audio():
     """
     問題生成と音声ファイルの再生
-    Args:
-        chain: 問題文生成用のChain
-        speed: 再生速度（1.0が通常速度、0.5で半分の速さ、2.0で倍速など）
-        openai_obj: OpenAIのオブジェクト
+    
+    session_stateから以下を取得して使用:
+        - chain_create_problem: 問題文生成用のChain
+        - speed: 再生速度
+        - openai_obj: OpenAIのオブジェクト
+    
+    Returns:
+        tuple: (問題文, 音声データ)
     """
 
     # 問題文を生成するChainを実行し、問題文を取得
